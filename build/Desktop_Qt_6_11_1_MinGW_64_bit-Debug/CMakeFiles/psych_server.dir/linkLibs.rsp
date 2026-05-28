@@ -1,1 +1,0 @@
- C:/APP/QT/6.11.1/mingw_64/lib/libQt6Sql.a C:/APP/QT/6.11.1/mingw_64/lib/libQt6WebSockets.a C:/APP/QT/6.11.1/mingw_64/lib/libQt6Network.a C:/APP/QT/6.11.1/mingw_64/lib/libQt6Core.a -lmpr -luserenv -lws2_32 -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 

@@ -16,7 +16,7 @@ namespace Config {
     constexpr int DB_PORT = 3306;
     const QString DB_NAME = "psychology_system";
     const QString DB_USER = "root";
-    const QString DB_PASSWORD = ""; // Set via environment variable PSYCH_DB_PASSWORD
+    const QString DB_PASSWORD = "Z.s.q.5.1.3.";
 
     // Security
     constexpr int PASSWORD_HASH_ROUNDS = 12;

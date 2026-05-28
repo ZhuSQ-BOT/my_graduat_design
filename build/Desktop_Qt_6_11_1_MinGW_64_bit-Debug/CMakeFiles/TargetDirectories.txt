@@ -1,5 +1,0 @@
-C:/graduat_design/server/build/Desktop_Qt_6_11_1_MinGW_64_bit-Debug/CMakeFiles/psych_server.dir
-C:/graduat_design/server/build/Desktop_Qt_6_11_1_MinGW_64_bit-Debug/CMakeFiles/edit_cache.dir
-C:/graduat_design/server/build/Desktop_Qt_6_11_1_MinGW_64_bit-Debug/CMakeFiles/rebuild_cache.dir
-C:/graduat_design/server/build/Desktop_Qt_6_11_1_MinGW_64_bit-Debug/CMakeFiles/psych_server_autogen_timestamp_deps.dir
-C:/graduat_design/server/build/Desktop_Qt_6_11_1_MinGW_64_bit-Debug/CMakeFiles/psych_server_autogen.dir

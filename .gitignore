@@ -1,0 +1,41 @@
+# Build
+build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.o
+*.a
+*.so
+*.so.*
+
+# Qt
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+*.qrc.depends
+.qmake.stash
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Binaries
+psych_server
+psych_client
+*.exe
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local

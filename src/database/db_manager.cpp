@@ -42,7 +42,7 @@ bool DbManager::init(const QString& host, int port, const QString& dbName,
 
 QString DbManager::createConnection() {
     QString connName = QString("conn_%1_%2")
-                           .arg(QThread::currentThreadId())
+                           .arg(reinterpret_cast<qintptr>(QThread::currentThreadId()))
                            .arg(m_connCounter++);
 
     QSqlDatabase db = QSqlDatabase::addDatabase("QMYSQL", connName);

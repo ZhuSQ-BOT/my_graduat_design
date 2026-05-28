@@ -1,3 +1,0 @@
-C:\APP\QT\Tools\CMake_64\bin\cmake.exe -E rm -f CMakeFiles\psych_server.dir/objects.a
-C:\APP\QT\Tools\mingw1310_64\bin\ar.exe qc CMakeFiles\psych_server.dir/objects.a @CMakeFiles\psych_server.dir\objects1.rsp
-C:\APP\QT\Tools\mingw1310_64\bin\g++.exe -g -Wl,--whole-archive CMakeFiles\psych_server.dir/objects.a -Wl,--no-whole-archive -o psych_server.exe -Wl,--out-implib,libpsych_server.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\psych_server.dir\linkLibs.rsp
