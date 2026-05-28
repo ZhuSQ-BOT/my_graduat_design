@@ -1,0 +1,40 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/psych_server_autogen.dir/AutogenUsed.txt"
+  "CMakeFiles/psych_server_autogen.dir/ParseCache.txt"
+  "psych_server_autogen"
+  "CMakeFiles/psych_server.dir/psych_server_autogen/mocs_compilation.cpp.obj"
+  "CMakeFiles/psych_server.dir/psych_server_autogen/mocs_compilation.cpp.obj.d"
+  "CMakeFiles/psych_server.dir/src/database/db_manager.cpp.obj"
+  "CMakeFiles/psych_server.dir/src/database/db_manager.cpp.obj.d"
+  "CMakeFiles/psych_server.dir/src/main.cpp.obj"
+  "CMakeFiles/psych_server.dir/src/main.cpp.obj.d"
+  "CMakeFiles/psych_server.dir/src/server/handlers/admin_handler.cpp.obj"
+  "CMakeFiles/psych_server.dir/src/server/handlers/admin_handler.cpp.obj.d"
+  "CMakeFiles/psych_server.dir/src/server/handlers/appointment_handler.cpp.obj"
+  "CMakeFiles/psych_server.dir/src/server/handlers/appointment_handler.cpp.obj.d"
+  "CMakeFiles/psych_server.dir/src/server/handlers/assessment_handler.cpp.obj"
+  "CMakeFiles/psych_server.dir/src/server/handlers/assessment_handler.cpp.obj.d"
+  "CMakeFiles/psych_server.dir/src/server/handlers/auth_handler.cpp.obj"
+  "CMakeFiles/psych_server.dir/src/server/handlers/auth_handler.cpp.obj.d"
+  "CMakeFiles/psych_server.dir/src/server/handlers/forum_handler.cpp.obj"
+  "CMakeFiles/psych_server.dir/src/server/handlers/forum_handler.cpp.obj.d"
+  "CMakeFiles/psych_server.dir/src/server/handlers/messaging_handler.cpp.obj"
+  "CMakeFiles/psych_server.dir/src/server/handlers/messaging_handler.cpp.obj.d"
+  "CMakeFiles/psych_server.dir/src/server/handlers/resource_handler.cpp.obj"
+  "CMakeFiles/psych_server.dir/src/server/handlers/resource_handler.cpp.obj.d"
+  "CMakeFiles/psych_server.dir/src/server/psych_server.cpp.obj"
+  "CMakeFiles/psych_server.dir/src/server/psych_server.cpp.obj.d"
+  "CMakeFiles/psych_server.dir/src/utils/logger.cpp.obj"
+  "CMakeFiles/psych_server.dir/src/utils/logger.cpp.obj.d"
+  "libpsych_server.dll.a"
+  "psych_server.exe"
+  "psych_server.exe.manifest"
+  "psych_server.pdb"
+  "psych_server_autogen/mocs_compilation.cpp"
+  "psych_server_autogen/timestamp"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang CXX)
+  include(CMakeFiles/psych_server.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()
