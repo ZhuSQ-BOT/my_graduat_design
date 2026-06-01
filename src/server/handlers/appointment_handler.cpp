@@ -89,7 +89,7 @@ void PsychServer::handleCreateAppointment(ClientSession* session, const Message&
             {"counselor_id", counselorId},
             {"scheduled_at", scheduledAt},
             {"duration", durationMinutes},
-            {"notes", notes.isEmpty() ? QVariant(QVariant::String) : QVariant(notes)}
+            {"notes", notes.isEmpty() ? QVariant() : QVariant(notes)}
         });
 
     qint64 appointmentId = DbManager::instance().lastInsertId();

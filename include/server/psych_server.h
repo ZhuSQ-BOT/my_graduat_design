@@ -28,6 +28,8 @@ public:
     void setUsername(const QString& name) { m_username = name; }
     QString token() const { return m_token; }
     void setToken(const QString& token) { m_token = token; }
+    QString role() const { return m_role; }
+    void setRole(const QString& role) { m_role = role; }
     bool isAuthenticated() const { return m_userId > 0; }
     void resetHeartbeat();
 
@@ -47,6 +49,7 @@ private:
     qint64 m_userId = -1;
     QString m_username;
     QString m_token;
+    QString m_role;
     QTimer* m_heartbeatTimer;
 };
 
@@ -79,6 +82,8 @@ private:
     // Message handlers (will be implemented per module)
     void handleLogin(ClientSession* session, const Message& msg);
     void handleRegister(ClientSession* session, const Message& msg);
+    void handleValidateToken(ClientSession* session, const Message& msg);
+    void handleLogout(ClientSession* session, const Message& msg);
     void handleHeartbeat(ClientSession* session, const Message& msg);
     void handleGetScales(ClientSession* session, const Message& msg);
     void handleGetScaleDetail(ClientSession* session, const Message& msg);
@@ -99,6 +104,14 @@ private:
     void handleGetDashboardStats(ClientSession* session, const Message& msg);
     void handleManageUser(ClientSession* session, const Message& msg);
     void handleGetSystemLogs(ClientSession* session, const Message& msg);
+
+    // Counselor/Publisher handlers (800-899)
+    void handlePublishTask(ClientSession* session, const Message& msg);
+    void handleGetMyTasks(ClientSession* session, const Message& msg);
+    void handleGetPendingTasks(ClientSession* session, const Message& msg);
+    void handleReviewTask(ClientSession* session, const Message& msg);
+    void handleGetTaskReport(ClientSession* session, const Message& msg);
+    void handleGrantReportAccess(ClientSession* session, const Message& msg);
 
     void sendMessage(ClientSession* session, const Message& msg);
     void broadcastToUser(qint64 userId, const Message& msg);

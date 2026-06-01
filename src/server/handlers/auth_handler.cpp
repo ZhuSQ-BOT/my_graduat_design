@@ -115,15 +115,17 @@ void PsychServer::handleLogin(ClientSession* session, const Message& msg) {
 
     // Login successful
     QString token = generateToken();
+    QString role = user["role"].toString();
     session->setUserId(userId);
     session->setUsername(username);
     session->setToken(token);
+    session->setRole(role);
     m_userSessions[userId] = session;
 
-    // Update user record
+    // Update user record (write token to DB for auto-login)
     DbManager::instance().executeUpdate(
-        "UPDATE users SET login_attempts = 0, locked_until = NULL, last_login = NOW() WHERE id = :id",
-        {{"id", userId}});
+        "UPDATE users SET login_attempts = 0, locked_until = NULL, last_login = NOW(), token = :token WHERE id = :id",
+        {{"id", userId}, {"token", token}});
 
     // Build response
     QJsonObject userData;
@@ -212,7 +214,7 @@ void PsychServer::handleRegister(ClientSession* session, const Message& msg) {
             {"username", username},
             {"password_hash", passwordHash},
             {"salt", salt},
-            {"email", email.isEmpty() ? QVariant(QVariant::String) : QVariant(email)},
+            {"email", email.isEmpty() ? QVariant() : QVariant(email)},
             {"nickname", nickname}
         });
 
@@ -247,3 +249,101 @@ void PsychServer::handleHeartbeat(ClientSession* session, const Message& msg) {
     sendMessage(session, Message::success(
         Protocol::MessageType::HEARTBEAT_ACK, msg.seq(), responseData));
 }
+
+// ============================================================
+// Token Validation Handler
+// ============================================================
+
+void PsychServer::handleValidateToken(ClientSession* session, const Message& msg) {
+    LOG_DEBUG(QString("[handleValidateToken] ENTRY seq=%1").arg(msg.seq()));
+    QJsonObject payload = msg.payload();
+    qint64 userId = payload["userId"].toInteger();
+    QString token = payload["token"].toString();
+    LOG_DEBUG(QString("[handleValidateToken] userId=%1 token=%2").arg(userId).arg(token.left(8)));
+
+    // 检查用户是否存在且token匹配
+    auto results = DbManager::instance().executeQuery(
+        "SELECT id, username, nickname, role, status, token FROM users WHERE id = :id",
+        {{"id", userId}});
+    LOG_DEBUG(QString("[handleValidateToken] query returned %1 rows").arg(results.size()));
+
+    if (results.isEmpty()) {
+        sendMessage(session, Message::error(msg.seq(),
+            Protocol::ErrorCode::USER_NOT_FOUND, "用户不存在"));
+        return;
+    }
+
+    auto user = results.first();
+    QString status = user["status"].toString();
+
+    if (status == "banned") {
+        sendMessage(session, Message::error(msg.seq(),
+            Protocol::ErrorCode::PERMISSION_DENIED, "账户已被封禁"));
+        return;
+    }
+
+    // 验证 token 是否匹配
+    QString storedToken = user["token"].toString();
+    if (storedToken.isEmpty() || storedToken != token) {
+        LOG_WARN(QString("Token validation failed for user %1 (ID: %2) - token mismatch")
+                     .arg(user["username"].toString()).arg(userId));
+        sendMessage(session, Message::error(msg.seq(),
+            Protocol::ErrorCode::AUTH_FAILED, "登录已过期，请重新登录"));
+        return;
+    }
+
+    // Token验证成功，恢复会话
+    session->setUserId(userId);
+    session->setUsername(user["username"].toString());
+    session->setToken(token);
+    session->setRole(user["role"].toString());
+    m_userSessions[userId] = session;
+
+    // 返回用户信息
+    QJsonObject userData;
+    userData["userId"] = userId;
+    userData["username"] = user["username"].toString();
+    userData["nickname"] = user["nickname"].toString();
+    userData["role"] = user["role"].toString();
+    userData["token"] = token;
+
+    QJsonObject responseData;
+    responseData["user"] = userData;
+    responseData["valid"] = true;
+
+    sendMessage(session, Message::success(
+        Protocol::MessageType::VALIDATE_TOKEN_RESPONSE, msg.seq(), responseData));
+
+    LOG_INFO(QString("Token validated for user %1 (ID: %2)").arg(user["username"].toString()).arg(userId));
+}
+
+// ============================================================
+// Logout Handler
+// ============================================================
+
+void PsychServer::handleLogout(ClientSession* session, const Message& msg) {
+    qint64 userId = session->userId();
+
+    if (userId > 0) {
+        // 清除数据库中该用户的 token，使自动登录失效
+        DbManager::instance().executeUpdate(
+            "UPDATE users SET token = NULL WHERE id = :id",
+            {{"id", userId}});
+        LOG_INFO(QString("User %1 (ID: %2) logged out, token cleared")
+                     .arg(session->username()).arg(userId));
+    }
+
+    // 从内存会话表中移除
+    m_userSessions.remove(userId);
+    session->setUserId(-1);
+    session->setToken("");
+    session->setRole("");
+
+    sendMessage(session, Message::success(
+        Protocol::MessageType::LOGOUT_RESPONSE, msg.seq(),
+        QJsonObject{{"success", true}}));
+
+    // 断开连接（延迟删除，避免在信号处理中直接 delete）
+    QTimer::singleShot(0, session, &QObject::deleteLater);
+}
+

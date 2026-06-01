@@ -183,6 +183,45 @@ void PsychServer::onNewWsConnection() {
 void PsychServer::onClientMessage(ClientSession* session, const Message& msg) {
     session->resetHeartbeat();
 
+    LOG_INFO(QString("[onClientMessage] Received message type: %1 from user: %2 role: %3")
+                 .arg(static_cast<quint32>(msg.type()))
+                 .arg(session->userId())
+                 .arg(session->role()));
+
+    // ============================================================
+    // 权限校验：未登录只能访问认证相关接口
+    // ============================================================
+    bool isAuthMessage =
+        msg.type() == Protocol::MessageType::LOGIN_REQUEST ||
+        msg.type() == Protocol::MessageType::REGISTER_REQUEST ||
+        msg.type() == Protocol::MessageType::VALIDATE_TOKEN_REQUEST ||
+        msg.type() == Protocol::MessageType::HEARTBEAT;
+
+    if (!session->isAuthenticated() && !isAuthMessage) {
+        LOG_WARN(QString("Unauthenticated access attempt: msgType=%1 from %2")
+                     .arg(static_cast<quint32>(msg.type()))
+                     .arg(session->socket()->peerAddress().toString()));
+        sendMessage(session, Message::error(msg.seq(),
+            Protocol::ErrorCode::AUTH_FAILED, "请先登录"));
+        return;
+    }
+
+    // ============================================================
+    // 权限校验：管理员专属接口
+    // ============================================================
+    bool isAdminOnly =
+        msg.type() == Protocol::MessageType::GET_DASHBOARD_STATS_REQUEST ||
+        msg.type() == Protocol::MessageType::MANAGE_USER_REQUEST ||
+        msg.type() == Protocol::MessageType::GET_SYSTEM_LOGS_REQUEST;
+
+    if (isAdminOnly && session->role() != "admin") {
+        LOG_WARN(QString("Permission denied: user %1 (role=%2) attempted admin action %3")
+                     .arg(session->userId()).arg(session->role()).arg(static_cast<quint32>(msg.type())));
+        sendMessage(session, Message::error(msg.seq(),
+            Protocol::ErrorCode::PERMISSION_DENIED, "权限不足，需要管理员身份"));
+        return;
+    }
+
     switch (msg.type()) {
     // Auth
     case Protocol::MessageType::LOGIN_REQUEST:
@@ -190,6 +229,12 @@ void PsychServer::onClientMessage(ClientSession* session, const Message& msg) {
         break;
     case Protocol::MessageType::REGISTER_REQUEST:
         handleRegister(session, msg);
+        break;
+    case Protocol::MessageType::VALIDATE_TOKEN_REQUEST:
+        handleValidateToken(session, msg);
+        break;
+    case Protocol::MessageType::LOGOUT_REQUEST:
+        handleLogout(session, msg);
         break;
 
     // Assessment
@@ -259,6 +304,26 @@ void PsychServer::onClientMessage(ClientSession* session, const Message& msg) {
         break;
     case Protocol::MessageType::GET_SYSTEM_LOGS_REQUEST:
         handleGetSystemLogs(session, msg);
+        break;
+
+    // Counselor/Publisher (800-899)
+    case Protocol::MessageType::PUBLISH_TASK_REQUEST:
+        handlePublishTask(session, msg);
+        break;
+    case Protocol::MessageType::GET_MY_TASKS_REQUEST:
+        handleGetMyTasks(session, msg);
+        break;
+    case Protocol::MessageType::GET_PENDING_TASKS_REQUEST:
+        handleGetPendingTasks(session, msg);
+        break;
+    case Protocol::MessageType::REVIEW_TASK_REQUEST:
+        handleReviewTask(session, msg);
+        break;
+    case Protocol::MessageType::GET_TASK_REPORT_REQUEST:
+        handleGetTaskReport(session, msg);
+        break;
+    case Protocol::MessageType::GRANT_REPORT_ACCESS_REQUEST:
+        handleGrantReportAccess(session, msg);
         break;
 
     // System
