@@ -18,6 +18,9 @@ namespace Config {
     const QString DB_USER = "root";
     const QString DB_PASSWORD = "Z.s.q.5.1.3.";
 
+    // DeepSeek AI API
+    const QString DEEPSEEK_API_KEY = "sk-889f8b90cb9544d1a25ef7caadbefcf5";
+
     // Security
     constexpr int PASSWORD_HASH_ROUNDS = 12;
     constexpr int TOKEN_EXPIRY_HOURS = 24;

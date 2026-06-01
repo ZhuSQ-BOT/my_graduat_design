@@ -8,6 +8,8 @@
 #include <QUuid>
 #include <QDateTime>
 
+PsychServer* g_serverInstance = nullptr;
+
 // ============================================================
 // ClientSession Implementation
 // ============================================================
@@ -39,7 +41,6 @@ void ClientSession::onReadyRead() {
 
 void ClientSession::processBuffer() {
     while (m_buffer.size() >= Protocol::HEADER_SIZE) {
-        // Peek at header to get body length
         QDataStream peekStream(m_buffer);
         peekStream.setByteOrder(QDataStream::BigEndian);
         quint32 magic, bodyLen;
@@ -53,7 +54,7 @@ void ClientSession::processBuffer() {
 
         int totalLen = Protocol::HEADER_SIZE + static_cast<int>(bodyLen);
         if (m_buffer.size() < totalLen) {
-            break; // Wait for more data
+            break;
         }
 
         QByteArray msgData = m_buffer.left(totalLen);
@@ -77,6 +78,7 @@ void ClientSession::onDisconnected() {
 // ============================================================
 
 PsychServer::PsychServer(QObject* parent) : QObject(parent) {
+    g_serverInstance = this;
     m_cleanupTimer = new QTimer(this);
     connect(m_cleanupTimer, &QTimer::timeout, this, &PsychServer::cleanupExpiredSessions);
 }
@@ -86,7 +88,6 @@ PsychServer::~PsychServer() {
 }
 
 bool PsychServer::start() {
-    // Initialize database
     QString dbPassword = qEnvironmentVariable("PSYCH_DB_PASSWORD");
     if (dbPassword.isEmpty()) {
         dbPassword = Config::DB_PASSWORD;
@@ -99,7 +100,6 @@ bool PsychServer::start() {
         return false;
     }
 
-    // Start TCP server
     m_tcpServer = new QTcpServer(this);
     connect(m_tcpServer, &QTcpServer::newConnection,
             this, &PsychServer::onNewTcpConnection);
@@ -111,7 +111,6 @@ bool PsychServer::start() {
         return false;
     }
 
-    // Start WebSocket server
     m_wsServer = new QWebSocketServer("PsychWS", QWebSocketServer::NonSecureMode, this);
     connect(m_wsServer, &QWebSocketServer::newConnection,
             this, &PsychServer::onNewWsConnection);
@@ -123,7 +122,6 @@ bool PsychServer::start() {
         return false;
     }
 
-    // Start cleanup timer (every 5 minutes)
     m_cleanupTimer->start(300000);
 
     LOG_INFO(QString("TCP server listening on port %1").arg(Config::TCP_PORT));
@@ -175,7 +173,7 @@ void PsychServer::onNewWsConnection() {
         connect(ws, &QWebSocket::disconnected,
                 this, &PsychServer::onWsDisconnected);
 
-        m_wsSessions[ws] = -1; // Not authenticated yet
+        m_wsSessions[ws] = -1;
         LOG_INFO("New WebSocket connection");
     }
 }
@@ -188,9 +186,6 @@ void PsychServer::onClientMessage(ClientSession* session, const Message& msg) {
                  .arg(session->userId())
                  .arg(session->role()));
 
-    // ============================================================
-    // 权限校验：未登录只能访问认证相关接口
-    // ============================================================
     bool isAuthMessage =
         msg.type() == Protocol::MessageType::LOGIN_REQUEST ||
         msg.type() == Protocol::MessageType::REGISTER_REQUEST ||
@@ -206,13 +201,13 @@ void PsychServer::onClientMessage(ClientSession* session, const Message& msg) {
         return;
     }
 
-    // ============================================================
-    // 权限校验：管理员专属接口
-    // ============================================================
     bool isAdminOnly =
         msg.type() == Protocol::MessageType::GET_DASHBOARD_STATS_REQUEST ||
         msg.type() == Protocol::MessageType::MANAGE_USER_REQUEST ||
-        msg.type() == Protocol::MessageType::GET_SYSTEM_LOGS_REQUEST;
+        msg.type() == Protocol::MessageType::GET_SYSTEM_LOGS_REQUEST ||
+        msg.type() == Protocol::MessageType::GET_REPORTS_REQUEST ||
+        msg.type() == Protocol::MessageType::RESOLVE_REPORT_REQUEST ||
+        msg.type() == Protocol::MessageType::DISMISS_REPORT_REQUEST;
 
     if (isAdminOnly && session->role() != "admin") {
         LOG_WARN(QString("Permission denied: user %1 (role=%2) attempted admin action %3")
@@ -223,7 +218,6 @@ void PsychServer::onClientMessage(ClientSession* session, const Message& msg) {
     }
 
     switch (msg.type()) {
-    // Auth
     case Protocol::MessageType::LOGIN_REQUEST:
         handleLogin(session, msg);
         break;
@@ -236,8 +230,18 @@ void PsychServer::onClientMessage(ClientSession* session, const Message& msg) {
     case Protocol::MessageType::LOGOUT_REQUEST:
         handleLogout(session, msg);
         break;
-
-    // Assessment
+    case Protocol::MessageType::GET_PROFILE_REQUEST:
+        handleGetProfile(session, msg);
+        break;
+    case Protocol::MessageType::UPDATE_PROFILE_REQUEST:
+        handleUpdateProfile(session, msg);
+        break;
+    case Protocol::MessageType::CHANGE_PASSWORD_REQUEST:
+        handleChangePassword(session, msg);
+        break;
+    case Protocol::MessageType::GET_USER_STATS_REQUEST:
+        handleGetUserStats(session, msg);
+        break;
     case Protocol::MessageType::GET_SCALES_REQUEST:
         handleGetScales(session, msg);
         break;
@@ -253,8 +257,18 @@ void PsychServer::onClientMessage(ClientSession* session, const Message& msg) {
     case Protocol::MessageType::GET_ASSESSMENT_STATS_REQUEST:
         handleGetAssessmentStats(session, msg);
         break;
-
-    // Messaging
+    case Protocol::MessageType::CREATE_SCALE_REQUEST:
+        handleCreateScale(session, msg);
+        break;
+    case Protocol::MessageType::UPDATE_SCALE_REQUEST:
+        handleUpdateScale(session, msg);
+        break;
+    case Protocol::MessageType::DELETE_SCALE_REQUEST:
+        handleDeleteScale(session, msg);
+        break;
+    case Protocol::MessageType::IMPORT_SCALE_REQUEST:
+        handleImportScale(session, msg);
+        break;
     case Protocol::MessageType::SEND_MESSAGE:
         handleSendMessage(session, msg);
         break;
@@ -264,8 +278,9 @@ void PsychServer::onClientMessage(ClientSession* session, const Message& msg) {
     case Protocol::MessageType::GET_MESSAGE_HISTORY_REQUEST:
         handleGetMessageHistory(session, msg);
         break;
-
-    // Forum
+    case Protocol::MessageType::AI_CHAT_REQUEST:
+        handleAiChat(session, msg);
+        break;
     case Protocol::MessageType::GET_POSTS_REQUEST:
         handleGetPosts(session, msg);
         break;
@@ -278,8 +293,9 @@ void PsychServer::onClientMessage(ClientSession* session, const Message& msg) {
     case Protocol::MessageType::CREATE_REPLY_REQUEST:
         handleCreateReply(session, msg);
         break;
-
-    // Appointment
+    case Protocol::MessageType::LIKE_POST_REQUEST:
+        handleLikePost(session, msg);
+        break;
     case Protocol::MessageType::GET_COUNSELORS_REQUEST:
         handleGetCounselors(session, msg);
         break;
@@ -289,13 +305,18 @@ void PsychServer::onClientMessage(ClientSession* session, const Message& msg) {
     case Protocol::MessageType::GET_APPOINTMENTS_REQUEST:
         handleGetAppointments(session, msg);
         break;
-
-    // Resources
     case Protocol::MessageType::GET_RESOURCES_REQUEST:
         handleGetResources(session, msg);
         break;
-
-    // Admin
+    case Protocol::MessageType::GET_FAVORITES_REQUEST:
+        handleGetFavorites(session, msg);
+        break;
+    case Protocol::MessageType::ADD_FAVORITE_REQUEST:
+        handleAddFavorite(session, msg);
+        break;
+    case Protocol::MessageType::REMOVE_FAVORITE_REQUEST:
+        handleRemoveFavorite(session, msg);
+        break;
     case Protocol::MessageType::GET_DASHBOARD_STATS_REQUEST:
         handleGetDashboardStats(session, msg);
         break;
@@ -305,8 +326,15 @@ void PsychServer::onClientMessage(ClientSession* session, const Message& msg) {
     case Protocol::MessageType::GET_SYSTEM_LOGS_REQUEST:
         handleGetSystemLogs(session, msg);
         break;
-
-    // Counselor/Publisher (800-899)
+    case Protocol::MessageType::GET_REPORTS_REQUEST:
+        handleGetReports(session, msg);
+        break;
+    case Protocol::MessageType::RESOLVE_REPORT_REQUEST:
+        handleResolveReport(session, msg);
+        break;
+    case Protocol::MessageType::DISMISS_REPORT_REQUEST:
+        handleDismissReport(session, msg);
+        break;
     case Protocol::MessageType::PUBLISH_TASK_REQUEST:
         handlePublishTask(session, msg);
         break;
@@ -325,12 +353,9 @@ void PsychServer::onClientMessage(ClientSession* session, const Message& msg) {
     case Protocol::MessageType::GRANT_REPORT_ACCESS_REQUEST:
         handleGrantReportAccess(session, msg);
         break;
-
-    // System
     case Protocol::MessageType::HEARTBEAT:
         handleHeartbeat(session, msg);
         break;
-
     default:
         sendMessage(session, Message::error(msg.seq(),
             Protocol::ErrorCode::INVALID_REQUEST, "Unknown message type"));
@@ -362,12 +387,10 @@ void PsychServer::onWsMessageReceived(const QString& message) {
     QString type = obj["type"].toString();
 
     if (type == "login") {
-        // Authenticate WebSocket connection
         qint64 userId = obj["userId"].toInteger();
         m_wsSessions[ws] = userId;
         LOG_INFO(QString("WebSocket authenticated for user %1").arg(userId));
     } else if (type == "message") {
-        // Forward message via WebSocket
         qint64 toUserId = obj["to"].toInteger();
         QJsonObject fwdPayload;
         fwdPayload["type"] = "message";
@@ -394,10 +417,6 @@ void PsychServer::cleanupExpiredSessions() {
                   .arg(m_sessions.size()).arg(m_wsSessions.size()));
 }
 
-// ============================================================
-// Utility Methods
-// ============================================================
-
 void PsychServer::sendMessage(ClientSession* session, const Message& msg) {
     if (session && session->socket() && session->socket()->isOpen()) {
         session->socket()->write(msg.serialize());
@@ -405,12 +424,10 @@ void PsychServer::sendMessage(ClientSession* session, const Message& msg) {
 }
 
 void PsychServer::broadcastToUser(qint64 userId, const Message& msg) {
-    // Send via TCP if connected
     if (m_userSessions.contains(userId)) {
         sendMessage(m_userSessions[userId], msg);
     }
 
-    // Send via WebSocket if connected
     for (auto it = m_wsSessions.begin(); it != m_wsSessions.end(); ++it) {
         if (it.value() == userId && it.key()->isValid()) {
             QJsonObject payload = msg.payload();

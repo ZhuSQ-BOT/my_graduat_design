@@ -16,16 +16,20 @@ void PsychServer::handleGetCounselors(ClientSession* session, const Message& msg
     }
 
     auto results = DbManager::instance().executeQuery(
-        "SELECT id, nickname, avatar, email FROM users "
+        "SELECT id, nickname, avatar, email, bio FROM users "
         "WHERE role = 'counselor' AND status = 'active' ORDER BY nickname");
 
     QJsonArray counselorArray;
     for (const auto& row : results) {
         QJsonObject c;
-        c["id"] = row["id"].toLongLong();
+        c["userId"] = row["id"].toLongLong();
         c["nickname"] = row["nickname"].toString();
         c["avatar"] = row["avatar"].toString();
         c["email"] = row["email"].toString();
+        QString bio = row["bio"].toString();
+        c["specialty"] = bio.isEmpty() ? "心理咨询" : bio;
+        c["rating"] = 4.5;
+        c["bio"] = bio.isEmpty() ? "资深心理咨询师，多年临床经验" : bio;
         counselorArray.append(c);
     }
 
@@ -117,7 +121,7 @@ void PsychServer::handleGetAppointments(ClientSession* session, const Message& m
     QJsonObject payload = msg.payload();
     QString status = payload["status"].toString();
 
-    QString sql = "SELECT a.id, a.scheduled_at, a.duration_minutes, a.status, a.notes, "
+    QString sql = "SELECT a.id, a.counselor_id, a.user_id, a.scheduled_at, a.duration_minutes, a.status, a.notes, "
                   "u.nickname as counselor_name, u.avatar as counselor_avatar "
                   "FROM appointments a "
                   "JOIN users u ON a.counselor_id = u.id "
@@ -136,10 +140,14 @@ void PsychServer::handleGetAppointments(ClientSession* session, const Message& m
     QJsonArray appointmentsArray;
     for (const auto& row : results) {
         QJsonObject apt;
+        QDateTime scheduledAt = row["scheduled_at"].toDateTime();
         apt["id"] = row["id"].toLongLong();
+        apt["counselorId"] = row["counselor_id"].toLongLong();
+        apt["userId"] = row["user_id"].toLongLong();
         apt["counselorName"] = row["counselor_name"].toString();
         apt["counselorAvatar"] = row["counselor_avatar"].toString();
-        apt["scheduledAt"] = row["scheduled_at"].toDateTime().toString(Qt::ISODate);
+        apt["appointmentDate"] = scheduledAt.toString("yyyy-MM-dd");
+        apt["appointmentTime"] = scheduledAt.toString("hh:mm");
         apt["durationMinutes"] = row["duration_minutes"].toInt();
         apt["status"] = row["status"].toString();
         apt["notes"] = row["notes"].toString();

@@ -61,7 +61,7 @@ void PsychServer::handlePublishTask(ClientSession* session, const Message& msg) 
             {"title", title},
             {"desc", description},
             {"targets", targetJson},
-            {"due", dueDate.isEmpty() ? QVariant(QVariant::String) : QVariant(dueDate)}
+            {"due", dueDate.isEmpty() ? QVariant(QString()) : QVariant(dueDate)}
         });
 
     // Get the inserted task ID
@@ -396,8 +396,8 @@ void PsychServer::handleGrantReportAccess(ClientSession* session, const Message&
         {
             {"uid", session->userId()},
             {"cid", counselorId},
-            {"rid", recordId > 0 ? QVariant(recordId) : QVariant(QVariant::Int)},
-            {"exp", expiresAt.isEmpty() ? QVariant(QVariant::String) : QVariant(expiresAt)}
+            {"rid", recordId > 0 ? QVariant(recordId) : QVariant(0)},
+            {"exp", expiresAt.isEmpty() ? QVariant(QString()) : QVariant(expiresAt)}
         });
 
     logAction(session->userId(), "grant_report_access", "counselor", counselorId);

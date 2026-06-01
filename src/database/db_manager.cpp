@@ -53,7 +53,7 @@ QString DbManager::createConnection() {
     db.setPassword(m_password);
 
     // Connection options
-    db.setConnectOptions("MYSQL_OPT_RECONNECT=1;MYSQL_OPT_CONNECT_TIMEOUT=10");
+    db.setConnectOptions("MYSQL_OPT_CONNECT_TIMEOUT=10");
 
     if (!db.open()) {
         LOG_ERROR(QString("Database connection failed: %1").arg(db.lastError().text()));

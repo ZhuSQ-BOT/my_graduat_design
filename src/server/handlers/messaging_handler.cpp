@@ -81,6 +81,7 @@ void PsychServer::handleGetContacts(ClientSession* session, const Message& msg) 
         QJsonObject c;
         c["userId"] = row["id"].toLongLong();
         c["nickname"] = row["nickname"].toString();
+        c["username"] = row["nickname"].toString();
         c["avatar"] = row["avatar"].toString();
         c["role"] = "counselor";
         // Check if online
@@ -108,6 +109,7 @@ void PsychServer::handleGetContacts(ClientSession* session, const Message& msg) 
         qint64 uid = row["id"].toLongLong();
         c["userId"] = uid;
         c["nickname"] = row["nickname"].toString();
+        c["username"] = row["nickname"].toString();
         c["avatar"] = row["avatar"].toString();
         c["role"] = row["role"].toString();
         c["isOnline"] = m_userSessions.contains(uid);
@@ -118,6 +120,16 @@ void PsychServer::handleGetContacts(ClientSession* session, const Message& msg) 
     QJsonObject responseData;
     responseData["counselors"] = counselorArray;
     responseData["contacts"] = contactArray;
+
+    // Always add AI chat bot as a contact
+    QJsonObject aiContact;
+    aiContact["userId"] = -1;
+    aiContact["nickname"] = "心灵伙伴(AI)";
+    aiContact["username"] = "心灵伙伴(AI)";
+    aiContact["avatar"] = "";
+    aiContact["role"] = "ai";
+    aiContact["isOnline"] = true;
+    counselorArray.prepend(aiContact);
 
     sendMessage(session, Message::success(
         Protocol::MessageType::GET_CONTACTS_RESPONSE, msg.seq(), responseData));

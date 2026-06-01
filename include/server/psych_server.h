@@ -69,6 +69,9 @@ public:
 
     int activeConnections() const { return m_sessions.size(); }
 
+    void sendMessage(ClientSession* session, const Message& msg);
+    void broadcastToUser(qint64 userId, const Message& msg);
+
 private slots:
     void onNewTcpConnection();
     void onNewWsConnection();
@@ -84,26 +87,42 @@ private:
     void handleRegister(ClientSession* session, const Message& msg);
     void handleValidateToken(ClientSession* session, const Message& msg);
     void handleLogout(ClientSession* session, const Message& msg);
+    void handleGetProfile(ClientSession* session, const Message& msg);
+    void handleUpdateProfile(ClientSession* session, const Message& msg);
+    void handleChangePassword(ClientSession* session, const Message& msg);
+    void handleGetUserStats(ClientSession* session, const Message& msg);
     void handleHeartbeat(ClientSession* session, const Message& msg);
     void handleGetScales(ClientSession* session, const Message& msg);
     void handleGetScaleDetail(ClientSession* session, const Message& msg);
     void handleSubmitAssessment(ClientSession* session, const Message& msg);
     void handleGetAssessmentHistory(ClientSession* session, const Message& msg);
     void handleGetAssessmentStats(ClientSession* session, const Message& msg);
+    void handleCreateScale(ClientSession* session, const Message& msg);
+    void handleUpdateScale(ClientSession* session, const Message& msg);
+    void handleDeleteScale(ClientSession* session, const Message& msg);
+    void handleImportScale(ClientSession* session, const Message& msg);
     void handleSendMessage(ClientSession* session, const Message& msg);
     void handleGetContacts(ClientSession* session, const Message& msg);
     void handleGetMessageHistory(ClientSession* session, const Message& msg);
+    void handleAiChat(ClientSession* session, const Message& msg);
     void handleGetPosts(ClientSession* session, const Message& msg);
     void handleCreatePost(ClientSession* session, const Message& msg);
     void handleGetPostDetail(ClientSession* session, const Message& msg);
     void handleCreateReply(ClientSession* session, const Message& msg);
+    void handleLikePost(ClientSession* session, const Message& msg);
     void handleGetCounselors(ClientSession* session, const Message& msg);
     void handleCreateAppointment(ClientSession* session, const Message& msg);
     void handleGetAppointments(ClientSession* session, const Message& msg);
     void handleGetResources(ClientSession* session, const Message& msg);
+    void handleGetFavorites(ClientSession* session, const Message& msg);
+    void handleAddFavorite(ClientSession* session, const Message& msg);
+    void handleRemoveFavorite(ClientSession* session, const Message& msg);
     void handleGetDashboardStats(ClientSession* session, const Message& msg);
     void handleManageUser(ClientSession* session, const Message& msg);
     void handleGetSystemLogs(ClientSession* session, const Message& msg);
+    void handleGetReports(ClientSession* session, const Message& msg);
+    void handleResolveReport(ClientSession* session, const Message& msg);
+    void handleDismissReport(ClientSession* session, const Message& msg);
 
     // Counselor/Publisher handlers (800-899)
     void handlePublishTask(ClientSession* session, const Message& msg);
@@ -113,8 +132,8 @@ private:
     void handleGetTaskReport(ClientSession* session, const Message& msg);
     void handleGrantReportAccess(ClientSession* session, const Message& msg);
 
-    void sendMessage(ClientSession* session, const Message& msg);
-    void broadcastToUser(qint64 userId, const Message& msg);
+    // TODO: 将 setInstance() 实现移到 cpp 文件
+    // void setInstance() { g_serverInstance = this; }
     void logAction(qint64 userId, const QString& action,
                    const QString& targetType = {}, qint64 targetId = 0,
                    const QJsonObject& details = {});

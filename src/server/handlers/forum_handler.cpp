@@ -21,8 +21,8 @@ void PsychServer::handleGetPosts(ClientSession* session, const Message& msg) {
     int pageSize = payload.value("pageSize").toInt(20);
     int offset = (page - 1) * pageSize;
 
-    QString sql = "SELECT p.id, p.title, p.category, p.view_count, p.like_count, "
-                  "p.reply_count, p.is_pinned, p.created_at, "
+    QString sql = "SELECT p.id, p.author_id, p.title, p.content, p.category, "
+                  "p.view_count, p.like_count, p.reply_count, p.is_pinned, p.created_at, "
                   "u.nickname as author_name, u.avatar as author_avatar "
                   "FROM forum_posts p "
                   "JOIN users u ON p.author_id = u.id "
@@ -44,7 +44,9 @@ void PsychServer::handleGetPosts(ClientSession* session, const Message& msg) {
     for (const auto& row : results) {
         QJsonObject post;
         post["id"] = row["id"].toLongLong();
+        post["authorId"] = row["author_id"].toLongLong();
         post["title"] = row["title"].toString();
+        post["content"] = row["content"].toString();
         post["category"] = row["category"].toString();
         post["authorName"] = row["author_name"].toString();
         post["authorAvatar"] = row["author_avatar"].toString();
@@ -52,6 +54,7 @@ void PsychServer::handleGetPosts(ClientSession* session, const Message& msg) {
         post["likeCount"] = row["like_count"].toInt();
         post["replyCount"] = row["reply_count"].toInt();
         post["isPinned"] = row["is_pinned"].toBool();
+        post["isLiked"] = false;
         post["createdAt"] = row["created_at"].toDateTime().toString(Qt::ISODate);
         postsArray.append(post);
     }
@@ -155,6 +158,7 @@ void PsychServer::handleGetPostDetail(ClientSession* session, const Message& msg
     postObj["viewCount"] = row["view_count"].toInt();
     postObj["likeCount"] = row["like_count"].toInt();
     postObj["replyCount"] = row["reply_count"].toInt();
+    postObj["isLiked"] = false;
     postObj["createdAt"] = row["created_at"].toDateTime().toString(Qt::ISODate);
 
     // Get replies
@@ -177,6 +181,7 @@ void PsychServer::handleGetPostDetail(ClientSession* session, const Message& msg
         reply["content"] = rRow["content"].toString();
         reply["parentReplyId"] = rRow["parent_reply_id"].isNull() ? -1 : rRow["parent_reply_id"].toLongLong();
         reply["likeCount"] = rRow["like_count"].toInt();
+        reply["isLiked"] = false;
         reply["createdAt"] = rRow["created_at"].toDateTime().toString(Qt::ISODate);
         repliesArray.append(reply);
     }
@@ -242,4 +247,43 @@ void PsychServer::handleCreateReply(ClientSession* session, const Message& msg) 
         Protocol::MessageType::CREATE_REPLY_RESPONSE, msg.seq(), responseData));
 
     logAction(session->userId(), "create_reply", "reply", replyId, {{"postId", postId}});
+}
+
+// ============================================================
+// Like Post (408)
+// ============================================================
+
+void PsychServer::handleLikePost(ClientSession* session, const Message& msg) {
+    if (!session->isAuthenticated()) {
+        sendMessage(session, Message::error(msg.seq(),
+            Protocol::ErrorCode::AUTH_FAILED, "请先登录"));
+        return;
+    }
+
+    qint64 postId = msg.payload()["postId"].toInteger();
+    if (postId <= 0) {
+        sendMessage(session, Message::error(msg.seq(),
+            Protocol::ErrorCode::INVALID_REQUEST, "无效的帖子ID"));
+        return;
+    }
+
+    // Increment like count
+    DbManager::instance().executeUpdate(
+        "UPDATE forum_posts SET like_count = like_count + 1 WHERE id = :id",
+        {{"id", postId}});
+
+    // Get updated count
+    auto results = DbManager::instance().executeQuery(
+        "SELECT like_count FROM forum_posts WHERE id = :id", {{"id", postId}});
+    int likeCount = results.isEmpty() ? 0 : results[0]["like_count"].toInt();
+
+    QJsonObject data;
+    data["likeCount"] = likeCount;
+
+    sendMessage(session, Message::success(
+        Protocol::MessageType::LIKE_POST_RESPONSE, msg.seq(), data));
+
+    logAction(session->userId(), "like_post", "post", postId);
+    LOG_INFO(QString("User %1 liked post %2 (count=%3)")
+                 .arg(session->userId()).arg(postId).arg(likeCount));
 }
