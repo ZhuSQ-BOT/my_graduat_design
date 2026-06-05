@@ -113,7 +113,19 @@ void PsychServer::handleLogin(ClientSession* session, const Message& msg) {
         return;
     }
 
-    // Login successful
+    // Login successful — kick old session
+    // Clear old token from DB so old client can't auto-reconnect
+    if (m_userSessions.contains(userId)) {
+        ClientSession* oldSession = m_userSessions[userId];
+        DbManager::instance().executeUpdate(
+            "UPDATE users SET token = NULL WHERE id = :id", {{"id", userId}});
+        sendMessage(oldSession, Message::error(0, Protocol::ErrorCode::AUTH_FAILED,
+            "您的账号在其他设备登录，当前会话已断开"));
+        oldSession->setUserId(-1);
+        QMetaObject::invokeMethod(oldSession->socket(), "disconnectFromHost", Qt::QueuedConnection);
+        m_userSessions.remove(userId);
+    }
+
     QString token = generateToken();
     QString role = user["role"].toString();
     session->setUserId(userId);
@@ -121,6 +133,7 @@ void PsychServer::handleLogin(ClientSession* session, const Message& msg) {
     session->setToken(token);
     session->setRole(role);
     m_userSessions[userId] = session;
+    broadcastOnlineStatus(userId, true);
 
     // Update user record (write token to DB for auto-login)
     DbManager::instance().executeUpdate(
@@ -292,12 +305,32 @@ void PsychServer::handleValidateToken(ClientSession* session, const Message& msg
         return;
     }
 
-    // Token验证成功，恢复会话
+    // Token验证成功 — 先踢旧连接 + 清除旧token
+    if (m_userSessions.contains(userId)) {
+        ClientSession* oldSession = m_userSessions[userId];
+        DbManager::instance().executeUpdate(
+            "UPDATE users SET token = NULL WHERE id = :id", {{"id", userId}});
+        sendMessage(oldSession, Message::error(0, Protocol::ErrorCode::AUTH_FAILED,
+            "您的账号在其他设备登录，当前会话已断开"));
+        m_userSessions.remove(userId);
+        oldSession->setUserId(-1);
+        QMetaObject::invokeMethod(oldSession->socket(), "disconnectFromHost", Qt::QueuedConnection);
+    }
+
+    // Generate new token so old client can't reconnect
+    QString newToken = generateToken();
     session->setUserId(userId);
     session->setUsername(user["username"].toString());
-    session->setToken(token);
+    session->setToken(newToken);
     session->setRole(user["role"].toString());
     m_userSessions[userId] = session;
+
+    // Write new token to DB
+    DbManager::instance().executeUpdate(
+        "UPDATE users SET login_attempts = 0, locked_until = NULL, last_login = NOW(), token = :token WHERE id = :id",
+        {{"id", userId}, {"token", newToken}});
+
+    broadcastOnlineStatus(userId, true);
 
     // 返回用户信息
     QJsonObject userData;
@@ -305,7 +338,7 @@ void PsychServer::handleValidateToken(ClientSession* session, const Message& msg
     userData["username"] = user["username"].toString();
     userData["nickname"] = user["nickname"].toString();
     userData["role"] = user["role"].toString();
-    userData["token"] = token;
+    userData["token"] = newToken;
 
     QJsonObject responseData;
     responseData["user"] = userData;
@@ -335,6 +368,7 @@ void PsychServer::handleLogout(ClientSession* session, const Message& msg) {
 
     // 从内存会话表中移除
     m_userSessions.remove(userId);
+    broadcastOnlineStatus(userId, false);
     session->setUserId(-1);
     session->setToken("");
     session->setRole("");

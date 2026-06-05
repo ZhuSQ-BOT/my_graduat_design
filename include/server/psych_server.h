@@ -71,6 +71,7 @@ public:
 
     void sendMessage(ClientSession* session, const Message& msg);
     void broadcastToUser(qint64 userId, const Message& msg);
+    void broadcastOnlineStatus(qint64 userId, bool online);
 
 private slots:
     void onNewTcpConnection();
@@ -105,6 +106,12 @@ private:
     void handleGetContacts(ClientSession* session, const Message& msg);
     void handleGetMessageHistory(ClientSession* session, const Message& msg);
     void handleAiChat(ClientSession* session, const Message& msg);
+    void handleAddContact(ClientSession* session, const Message& msg);
+    void handleRemoveContact(ClientSession* session, const Message& msg);
+    void handleSearchUsers(ClientSession* session, const Message& msg);
+    void handleGetPendingRequests(ClientSession* session, const Message& msg);
+    void handleAcceptContact(ClientSession* session, const Message& msg);
+    void handleRejectContact(ClientSession* session, const Message& msg);
     void handleGetPosts(ClientSession* session, const Message& msg);
     void handleCreatePost(ClientSession* session, const Message& msg);
     void handleGetPostDetail(ClientSession* session, const Message& msg);

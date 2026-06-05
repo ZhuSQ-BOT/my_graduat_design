@@ -13,11 +13,13 @@ set(SOURCES
     src/database/db_manager.cpp
     src/server/psych_server.cpp
     src/utils/logger.cpp
+    src/ai/deepseek_client.cpp
     src/server/handlers/admin_handler.cpp
     src/server/handlers/ai_chat_handler.cpp
     src/server/handlers/appointment_handler.cpp
     src/server/handlers/assessment_handler.cpp
     src/server/handlers/auth_handler.cpp
+    src/server/handlers/contact_handler.cpp
     src/server/handlers/counselor_handler.cpp
     src/server/handlers/favorites_handler.cpp
     src/server/handlers/forum_handler.cpp
@@ -34,6 +36,7 @@ set(HEADERS
     include/protocol.h
     include/database/db_manager.h
     include/server/psych_server.h
+    include/ai/deepseek_client.h
     src/utils/logger.h
 )
 

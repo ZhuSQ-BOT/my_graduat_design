@@ -5,16 +5,14 @@
 #include <QDateTime>
 
 // ============================================================
-// Send Message (IM)
+// Send Message
 // ============================================================
-
 void PsychServer::handleSendMessage(ClientSession* session, const Message& msg) {
     if (!session->isAuthenticated()) {
         sendMessage(session, Message::error(msg.seq(),
             Protocol::ErrorCode::AUTH_FAILED, "请先登录"));
         return;
     }
-
     QJsonObject payload = msg.payload();
     qint64 receiverId = payload["receiverId"].toInteger();
     QString content = payload["content"].toString().trimmed();
@@ -27,19 +25,14 @@ void PsychServer::handleSendMessage(ClientSession* session, const Message& msg) 
     }
 
     // Store message
-    int rows = DbManager::instance().executeUpdate(
+    DbManager::instance().executeUpdate(
         "INSERT INTO messages (sender_id, receiver_id, content, msg_type) "
         "VALUES (:sender_id, :receiver_id, :content, :msg_type)",
-        {
-            {"sender_id", session->userId()},
-            {"receiver_id", receiverId},
-            {"content", content},
-            {"msg_type", msgType}
-        });
-
+        {{"sender_id", session->userId()}, {"receiver_id", receiverId},
+         {"content", content}, {"msg_type", msgType}});
     qint64 msgId = DbManager::instance().lastInsertId();
 
-    // Build forwarded message
+    // Forward to receiver if online
     QJsonObject fwdPayload;
     fwdPayload["msgId"] = msgId;
     fwdPayload["senderId"] = session->userId();
@@ -47,24 +40,20 @@ void PsychServer::handleSendMessage(ClientSession* session, const Message& msg) 
     fwdPayload["content"] = content;
     fwdPayload["msgType"] = msgType;
     fwdPayload["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    broadcastToUser(receiverId,
+        Message(Protocol::MessageType::RECEIVE_MESSAGE, 0, fwdPayload));
 
-    // Forward to receiver if online
-    broadcastToUser(receiverId, Message(
-        Protocol::MessageType::RECEIVE_MESSAGE, 0, fwdPayload));
-
-    // Confirm to sender
     QJsonObject responseData;
     responseData["msgId"] = msgId;
-    responseData["timestamp"] = fwdPayload["timestamp"];
-
+    responseData["senderId"] = session->userId();
+    responseData["senderName"] = session->username();
     sendMessage(session, Message::success(
         Protocol::MessageType::RECEIVE_MESSAGE, msg.seq(), responseData));
 }
 
 // ============================================================
-// Get Contacts (online users / counselors)
+// Get Contacts - based on user_contacts table + AI bot
 // ============================================================
-
 void PsychServer::handleGetContacts(ClientSession* session, const Message& msg) {
     if (!session->isAuthenticated()) {
         sendMessage(session, Message::error(msg.seq(),
@@ -72,73 +61,48 @@ void PsychServer::handleGetContacts(ClientSession* session, const Message& msg) 
         return;
     }
 
-    // Get counselors and recent contacts
-    auto counselors = DbManager::instance().executeQuery(
-        "SELECT id, nickname, avatar FROM users WHERE role = 'counselor' AND status = 'active'");
+    qint64 uid = session->userId();
+    QJsonArray contactsArr;
 
-    QJsonArray counselorArray;
-    for (const auto& row : counselors) {
+    // AI bot is always available
+    QJsonObject aiContact;
+    aiContact["userId"] = -1;
+    aiContact["nickname"] = "AI助手";
+    aiContact["username"] = "AI助手";
+    aiContact["role"] = "ai";
+    aiContact["avatar"] = "";
+    aiContact["isOnline"] = true;
+    contactsArr.append(aiContact);
+
+    // Get accepted contacts from user_contacts table
+    auto results = DbManager::instance().executeQuery(
+        "SELECT u.id, u.nickname, u.avatar, u.role, uc.created_at "
+        "FROM user_contacts uc JOIN users u ON uc.contact_id = u.id "
+        "WHERE uc.user_id = :uid AND uc.status = 'accepted' AND u.status = 'active' "
+        "ORDER BY u.role DESC, u.nickname",
+        {{"uid", uid}});
+
+    for (const auto& row : results) {
         QJsonObject c;
-        c["userId"] = row["id"].toLongLong();
+        qint64 cid = row["id"].toLongLong();
+        c["userId"] = cid;
         c["nickname"] = row["nickname"].toString();
         c["username"] = row["nickname"].toString();
-        c["avatar"] = row["avatar"].toString();
-        c["role"] = "counselor";
-        // Check if online
-        qint64 uid = row["id"].toLongLong();
-        c["isOnline"] = m_userSessions.contains(uid);
-        counselorArray.append(c);
-    }
-
-    // Get users this user has messaged with
-    auto contacts = DbManager::instance().executeQuery(
-        "SELECT DISTINCT u.id, u.nickname, u.avatar, u.role, "
-        "(SELECT MAX(m2.created_at) FROM messages m2 "
-        "WHERE (m2.sender_id = u.id AND m2.receiver_id = :uid) "
-        "OR (m2.sender_id = :uid AND m2.receiver_id = u.id)) as last_msg_time "
-        "FROM users u "
-        "WHERE u.id IN ("
-        "  SELECT DISTINCT CASE WHEN sender_id = :uid THEN receiver_id ELSE sender_id END "
-        "  FROM messages WHERE sender_id = :uid OR receiver_id = :uid"
-        ") ORDER BY last_msg_time DESC",
-        {{"uid", session->userId()}});
-
-    QJsonArray contactArray;
-    for (const auto& row : contacts) {
-        QJsonObject c;
-        qint64 uid = row["id"].toLongLong();
-        c["userId"] = uid;
-        c["nickname"] = row["nickname"].toString();
-        c["username"] = row["nickname"].toString();
-        c["avatar"] = row["avatar"].toString();
         c["role"] = row["role"].toString();
-        c["isOnline"] = m_userSessions.contains(uid);
-        c["lastMsgTime"] = row["last_msg_time"].toDateTime().toString(Qt::ISODate);
-        contactArray.append(c);
+        c["avatar"] = row["avatar"].toString();
+        c["isOnline"] = m_userSessions.contains(cid);
+        contactsArr.append(c);
     }
 
     QJsonObject responseData;
-    responseData["counselors"] = counselorArray;
-    responseData["contacts"] = contactArray;
-
-    // Always add AI chat bot as a contact
-    QJsonObject aiContact;
-    aiContact["userId"] = -1;
-    aiContact["nickname"] = "心灵伙伴(AI)";
-    aiContact["username"] = "心灵伙伴(AI)";
-    aiContact["avatar"] = "";
-    aiContact["role"] = "ai";
-    aiContact["isOnline"] = true;
-    counselorArray.prepend(aiContact);
-
+    responseData["contacts"] = contactsArr;
     sendMessage(session, Message::success(
         Protocol::MessageType::GET_CONTACTS_RESPONSE, msg.seq(), responseData));
 }
 
 // ============================================================
-// Get Message History
+// Get Message History - with pagination
 // ============================================================
-
 void PsychServer::handleGetMessageHistory(ClientSession* session, const Message& msg) {
     if (!session->isAuthenticated()) {
         sendMessage(session, Message::error(msg.seq(),
@@ -149,10 +113,10 @@ void PsychServer::handleGetMessageHistory(ClientSession* session, const Message&
     QJsonObject payload = msg.payload();
     qint64 otherUserId = payload["otherUserId"].toInteger();
     int page = payload.value("page").toInt(1);
-    int pageSize = payload.value("pageSize").toInt(50);
+    int pageSize = payload.value("pageSize").toInt(20);
     int offset = (page - 1) * pageSize;
 
-    if (otherUserId <= 0) {
+    if (otherUserId == 0) {
         sendMessage(session, Message::error(msg.seq(),
             Protocol::ErrorCode::INVALID_REQUEST, "无效的用户ID"));
         return;
@@ -160,18 +124,24 @@ void PsychServer::handleGetMessageHistory(ClientSession* session, const Message&
 
     qint64 myId = session->userId();
 
-    auto results = DbManager::instance().executeQuery(
-        "SELECT id, sender_id, receiver_id, content, msg_type, is_read, created_at "
-        "FROM messages "
+    // Count total
+    auto countResult = DbManager::instance().executeQuery(
+        "SELECT COUNT(*) AS total FROM messages "
         "WHERE (sender_id = :my_id AND receiver_id = :other_id) "
-        "OR (sender_id = :other_id AND receiver_id = :my_id) "
-        "ORDER BY created_at DESC LIMIT :limit OFFSET :offset",
-        {
-            {"my_id", myId},
-            {"other_id", otherUserId},
-            {"limit", pageSize},
-            {"offset", offset}
-        });
+        "OR (sender_id = :other_id AND receiver_id = :my_id)",
+        {{"my_id", myId}, {"other_id", otherUserId}});
+    int total = countResult.isEmpty() ? 0 : countResult[0]["total"].toInt();
+
+    // Fetch messages with sender name (oldest first for chat display)
+    auto results = DbManager::instance().executeQuery(
+        "SELECT m.id, m.sender_id, m.receiver_id, m.content, m.msg_type, m.is_read, m.created_at, "
+        "COALESCE(u.nickname, 'AI助手') AS sender_name "
+        "FROM messages m LEFT JOIN users u ON m.sender_id = u.id "
+        "WHERE (m.sender_id = :my_id AND m.receiver_id = :other_id) "
+        "OR (m.sender_id = :other_id AND m.receiver_id = :my_id) "
+        "ORDER BY m.created_at DESC LIMIT :limit OFFSET :offset",
+        {{"my_id", myId}, {"other_id", otherUserId},
+         {"limit", pageSize}, {"offset", offset}});
 
     // Mark unread as read
     DbManager::instance().executeUpdate(
@@ -184,17 +154,21 @@ void PsychServer::handleGetMessageHistory(ClientSession* session, const Message&
         QJsonObject m;
         m["id"] = row["id"].toLongLong();
         m["senderId"] = row["sender_id"].toLongLong();
+        m["senderName"] = row["sender_name"].toString();
         m["receiverId"] = row["receiver_id"].toLongLong();
         m["content"] = row["content"].toString();
         m["msgType"] = row["msg_type"].toString();
         m["isRead"] = row["is_read"].toBool();
-        m["createdAt"] = row["created_at"].toDateTime().toString(Qt::ISODate);
+        m["createdAt"] = row["created_at"].toDateTime().toString("yyyy-MM-dd hh:mm:ss");
         messagesArray.append(m);
     }
 
     QJsonObject responseData;
     responseData["messages"] = messagesArray;
     responseData["page"] = page;
+    responseData["pageSize"] = pageSize;
+    responseData["total"] = total;
+    responseData["hasMore"] = (offset + pageSize) < total;
 
     sendMessage(session, Message::success(
         Protocol::MessageType::GET_MESSAGE_HISTORY_RESPONSE, msg.seq(), responseData));

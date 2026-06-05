@@ -2,6 +2,7 @@
 #include "config.h"
 #include "utils/logger.h"
 #include "server/psych_server.h"
+#include "ai/deepseek_client.h"
 
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
@@ -11,6 +12,10 @@ int main(int argc, char *argv[]) {
     Logger::instance().init("psych_server.log");
     LOG_INFO("=== Psychology Counseling Server Starting ===");
     LOG_INFO(QString("Version: %1").arg(app.applicationVersion()));
+
+    // Initialize DeepSeek AI
+    DeepSeekClient::instance().setApiKey(Config::DEEPSEEK_API_KEY);
+    LOG_INFO("DeepSeek AI client initialized");
 
     PsychServer server;
     if (!server.start()) {

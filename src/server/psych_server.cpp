@@ -281,6 +281,24 @@ void PsychServer::onClientMessage(ClientSession* session, const Message& msg) {
     case Protocol::MessageType::AI_CHAT_REQUEST:
         handleAiChat(session, msg);
         break;
+    case Protocol::MessageType::ADD_CONTACT_REQUEST:
+        handleAddContact(session, msg);
+        break;
+    case Protocol::MessageType::REMOVE_CONTACT_REQUEST:
+        handleRemoveContact(session, msg);
+        break;
+    case Protocol::MessageType::SEARCH_USERS_REQUEST:
+        handleSearchUsers(session, msg);
+        break;
+    case Protocol::MessageType::GET_PENDING_REQUESTS_REQUEST:
+        handleGetPendingRequests(session, msg);
+        break;
+    case Protocol::MessageType::ACCEPT_CONTACT_REQUEST:
+        handleAcceptContact(session, msg);
+        break;
+    case Protocol::MessageType::REJECT_CONTACT_REQUEST:
+        handleRejectContact(session, msg);
+        break;
     case Protocol::MessageType::GET_POSTS_REQUEST:
         handleGetPosts(session, msg);
         break;
@@ -370,10 +388,36 @@ void PsychServer::onClientDisconnected(ClientSession* session) {
         LOG_INFO(QString("User %1 (%2) disconnected")
                      .arg(userId).arg(session->username()));
         logAction(userId, "logout");
+        broadcastOnlineStatus(userId, false);
     }
 
     m_sessions.remove(session->socket());
     session->deleteLater();
+}
+
+void PsychServer::broadcastOnlineStatus(qint64 userId, bool online) {
+    QJsonObject payload;
+    payload["userId"] = userId;
+    payload["isOnline"] = online;
+
+    // Try to query user_contacts table (may not exist yet)
+    QList<QVariantMap> contacts;
+    auto check = DbManager::instance().executeQuery(
+        "SELECT COUNT(*) AS cnt FROM information_schema.tables "
+        "WHERE table_schema = DATABASE() AND table_name = 'user_contacts'", {});
+
+    if (!check.isEmpty() && check[0]["cnt"].toInt() > 0) {
+        contacts = DbManager::instance().executeQuery(
+            "SELECT user_id FROM user_contacts "
+            "WHERE contact_id = :uid AND status = 'accepted'",
+            {{"uid", userId}});
+    }
+
+    for (const auto& row : contacts) {
+        qint64 contactId = row["user_id"].toLongLong();
+        broadcastToUser(contactId,
+            Message(Protocol::MessageType::ONLINE_STATUS_UPDATE, 0, payload));
+    }
 }
 
 void PsychServer::onWsMessageReceived(const QString& message) {
