@@ -19,7 +19,7 @@ namespace Config {
     const QString DB_PASSWORD = "Z.s.q.5.1.3.";
 
     // DeepSeek AI API
-    const QString DEEPSEEK_API_KEY = "sk-889f8b90cb9544d1a25ef7caadbefcf5";
+    const QString DEEPSEEK_API_KEY = "";
 
     // Security
     constexpr int PASSWORD_HASH_ROUNDS = 12;

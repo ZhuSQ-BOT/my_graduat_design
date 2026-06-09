@@ -191,6 +191,7 @@ void PsychServer::handleSubmitAssessment(ClientSession* session, const Message& 
 
     // Calculate score
     double rawScore = 0;
+    QJsonObject factorScores; // <-- 新增：因子得分
     QString answersJson = QString::fromUtf8(
         QJsonDocument(answers).toJson(QJsonDocument::Compact));
 
@@ -204,6 +205,44 @@ void PsychServer::handleSubmitAssessment(ClientSession* session, const Message& 
         }
 
         rawScore += value;
+        
+        // Calculate factor scores
+        QString scoringRulesStr = questions[i]["scoring_rules"].toString();
+        if (!scoringRulesStr.isEmpty()) {
+            QJsonParseError error;
+            QJsonDocument doc = QJsonDocument::fromJson(scoringRulesStr.toUtf8(), &error);
+            if (error.error == QJsonParseError::NoError && doc.isObject()) {
+                QJsonObject rules = doc.object();
+                QJsonArray factors = rules["factors"].toArray();
+                QJsonArray weights = rules["weights"].toArray();
+                
+                for (int j = 0; j < factors.size(); ++j) {
+                    QString factor = factors[j].toString();
+                    double weight = weights.isEmpty() ? 1.0 : weights[j].toDouble();
+                    double factorScore = value * weight;
+                    
+                    if (factorScores.contains(factor)) {
+                        factorScores[factor] = factorScores[factor].toDouble() + factorScore;
+                    } else {
+                        factorScores[factor] = factorScore;
+                    }
+                }
+            } else {
+                // If no valid scoring_rules, use "total" as default factor
+                if (factorScores.contains("total")) {
+                    factorScores["total"] = factorScores["total"].toDouble() + value;
+                } else {
+                    factorScores["total"] = value;
+                }
+            }
+        } else {
+            // If no scoring_rules, use "total" as default factor
+            if (factorScores.contains("total")) {
+                factorScores["total"] = factorScores["total"].toDouble() + value;
+            } else {
+                factorScores["total"] = value;
+            }
+        }
     }
 
     // Apply scoring method
@@ -246,7 +285,7 @@ void PsychServer::handleSubmitAssessment(ClientSession* session, const Message& 
             {"user_id", session->userId()},
             {"scale_id", scaleId},
             {"total_score", totalScore},
-            {"factor_scores", "{}"},
+            {"factor_scores", QString::fromUtf8(QJsonDocument(factorScores).toJson(QJsonDocument::Compact))},
             {"result_level", resultLevel},
             {"result_interpretation", interpretation},
             {"answers", answersJson},
@@ -289,7 +328,8 @@ void PsychServer::handleGetAssessmentHistory(ClientSession* session, const Messa
     int offset = (page - 1) * pageSize;
 
     QString sql = "SELECT ar.id, ar.scale_id, s.name as scale_name, ar.total_score, "
-                  "ar.result_level, ar.result_interpretation, ar.completed_at "
+                  "ar.result_level, ar.result_interpretation, ar.completed_at, "
+                  "ar.factor_scores "
                   "FROM assessment_records ar "
                   "JOIN scales s ON ar.scale_id = s.id "
                   "WHERE ar.user_id = :user_id";
@@ -316,6 +356,21 @@ void PsychServer::handleGetAssessmentHistory(ClientSession* session, const Messa
         record["resultLevel"] = row["result_level"].toString();
         record["interpretation"] = row["result_interpretation"].toString();
         record["completedAt"] = row["completed_at"].toDateTime().toString(Qt::ISODate);
+        
+        // Parse factor_scores (JSON field)
+        QString factorScoresStr = row["factor_scores"].toString();
+        if (!factorScoresStr.isEmpty() && factorScoresStr != "{}") {
+            QJsonParseError error;
+            QJsonDocument doc = QJsonDocument::fromJson(factorScoresStr.toUtf8(), &error);
+            if (error.error == QJsonParseError::NoError && doc.isObject()) {
+                record["factorScores"] = doc.object();
+            } else {
+                record["factorScores"] = QJsonObject();
+            }
+        } else {
+            record["factorScores"] = QJsonObject();
+        }
+        
         recordsArray.append(record);
     }
 

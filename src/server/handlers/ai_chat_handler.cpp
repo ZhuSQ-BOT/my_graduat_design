@@ -26,37 +26,40 @@ void PsychServer::handleAiChat(ClientSession* session, const Message& msg) {
         return;
     }
 
+    const qint64 AI_USER_ID = 0;
+
     // Store user message
     DbManager::instance().executeUpdate(
         "INSERT INTO messages (sender_id, receiver_id, content, msg_type) "
         "VALUES (:sender, :receiver, :content, 'text')",
-        {{"sender", session->userId()}, {"receiver", -1}, {"content", message}});
+        {{"sender", session->userId()}, {"receiver", AI_USER_ID}, {"content", message}});
 
-    // Use DeepSeek API
+    LOG_INFO(QString("AI chat request from user %1: %2").arg(session->userId()).arg(message.left(50)));
+
+    // Capture userId and seq instead of raw session pointer (session may disconnect before API responds)
+    qint64 userId = session->userId();
+    quint32 seq = msg.seq();
+
     DeepSeekClient::instance().sendMessage(message,
-        [this, session, msg](const QString& aiResponse, bool isApiResponse) {
-            // Store AI response
+        [this, userId, seq, AI_USER_ID](const QString& aiResponse, bool isApiResponse) {
+            LOG_INFO(QString("AI response for user %1 (api=%2): %3")
+                .arg(userId).arg(isApiResponse).arg(aiResponse.left(50)));
+
+            // Store AI response in DB
             DbManager::instance().executeUpdate(
                 "INSERT INTO messages (sender_id, receiver_id, content, msg_type) "
                 "VALUES (:sender, :receiver, :content, 'text')",
-                {{"sender", -1}, {"receiver", session->userId()}, {"content", aiResponse}});
+                {{"sender", AI_USER_ID}, {"receiver", userId}, {"content", aiResponse}});
 
-            QJsonObject responsePayload;
-            responsePayload["content"] = aiResponse;
-            responsePayload["senderId"] = -1;
-            responsePayload["senderName"] = "心灵伙伴(AI)";
-            sendMessage(session, Message::success(
-                Protocol::MessageType::AI_CHAT_RESPONSE, msg.seq(), responsePayload));
-
-            // Also push to user via RECEIVE_MESSAGE if online
-            QJsonObject pushPayload;
-            pushPayload["msgId"] = -1;
-            pushPayload["senderId"] = -1;
-            pushPayload["senderName"] = "心灵伙伴(AI)";
-            pushPayload["content"] = aiResponse;
-            pushPayload["msgType"] = "text";
-            pushPayload["timestamp"] = QDateTime::currentMSecsSinceEpoch();
-            broadcastToUser(session->userId(),
-                Message(Protocol::MessageType::RECEIVE_MESSAGE, 0, pushPayload));
+            // Send response only once via direct response to original session
+            if (m_userSessions.contains(userId)) {
+                ClientSession* sess = m_userSessions[userId];
+                QJsonObject directPayload;
+                directPayload["content"] = aiResponse;
+                directPayload["senderId"] = AI_USER_ID;
+                directPayload["senderName"] = "心灵伙伴(AI)";
+                sendMessage(sess, Message::success(
+                    Protocol::MessageType::AI_CHAT_RESPONSE, seq, directPayload));
+            }
         });
 }

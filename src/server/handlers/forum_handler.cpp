@@ -40,6 +40,16 @@ void PsychServer::handleGetPosts(ClientSession* session, const Message& msg) {
 
     auto results = DbManager::instance().executeQuery(sql, bindings);
 
+    // Get current user's liked posts
+    qint64 userId = session->userId();
+    auto likedResults = DbManager::instance().executeQuery(
+        "SELECT post_id FROM forum_likes WHERE user_id = :user_id",
+        {{"user_id", userId}});
+    QSet<qint64> likedPostIds;
+    for (const auto& row : likedResults) {
+        likedPostIds.insert(row["post_id"].toLongLong());
+    }
+
     QJsonArray postsArray;
     for (const auto& row : results) {
         QJsonObject post;
@@ -54,7 +64,7 @@ void PsychServer::handleGetPosts(ClientSession* session, const Message& msg) {
         post["likeCount"] = row["like_count"].toInt();
         post["replyCount"] = row["reply_count"].toInt();
         post["isPinned"] = row["is_pinned"].toBool();
-        post["isLiked"] = false;
+        post["isLiked"] = likedPostIds.contains(post["id"].toInteger());
         post["createdAt"] = row["created_at"].toDateTime().toString(Qt::ISODate);
         postsArray.append(post);
     }
@@ -158,7 +168,14 @@ void PsychServer::handleGetPostDetail(ClientSession* session, const Message& msg
     postObj["viewCount"] = row["view_count"].toInt();
     postObj["likeCount"] = row["like_count"].toInt();
     postObj["replyCount"] = row["reply_count"].toInt();
-    postObj["isLiked"] = false;
+    
+    // Check if current user liked this post
+    qint64 userId = session->userId();
+    auto likeResults = DbManager::instance().executeQuery(
+        "SELECT id FROM forum_likes WHERE user_id = :user_id AND post_id = :post_id",
+        {{"user_id", userId}, {"post_id", postId}});
+    postObj["isLiked"] = !likeResults.isEmpty();
+    
     postObj["createdAt"] = row["created_at"].toDateTime().toString(Qt::ISODate);
 
     // Get replies
@@ -250,7 +267,7 @@ void PsychServer::handleCreateReply(ClientSession* session, const Message& msg) 
 }
 
 // ============================================================
-// Like Post (408)
+// Like Post (408) - Toggle mode
 // ============================================================
 
 void PsychServer::handleLikePost(ClientSession* session, const Message& msg) {
@@ -267,23 +284,55 @@ void PsychServer::handleLikePost(ClientSession* session, const Message& msg) {
         return;
     }
 
-    // Increment like count
-    DbManager::instance().executeUpdate(
-        "UPDATE forum_posts SET like_count = like_count + 1 WHERE id = :id",
-        {{"id", postId}});
+    qint64 userId = session->userId();
 
-    // Get updated count
+    // Check if user already liked this post
+    auto likeResults = DbManager::instance().executeQuery(
+        "SELECT id FROM forum_likes WHERE user_id = :user_id AND post_id = :post_id",
+        {{"user_id", userId}, {"post_id", postId}});
+
+    int likeCount = 0;
+    if (!likeResults.isEmpty()) {
+        // User already liked, so unlike (toggle off)
+        DbManager::instance().executeUpdate(
+            "DELETE FROM forum_likes WHERE user_id = :user_id AND post_id = :post_id",
+            {{"user_id", userId}, {"post_id", postId}});
+
+        // Decrement like count
+        DbManager::instance().executeUpdate(
+            "UPDATE forum_posts SET like_count = GREATEST(like_count - 1, 0) WHERE id = :id",
+            {{"id", postId}});
+
+        LOG_INFO(QString("User %1 unliked post %2").arg(userId).arg(postId));
+    } else {
+        // User hasn't liked yet, so like (toggle on)
+        DbManager::instance().executeUpdate(
+            "INSERT INTO forum_likes (user_id, post_id) VALUES (:user_id, :post_id)",
+            {{"user_id", userId}, {"post_id", postId}});
+
+        // Increment like count
+        DbManager::instance().executeUpdate(
+            "UPDATE forum_posts SET like_count = like_count + 1 WHERE id = :id",
+            {{"id", postId}});
+
+        logAction(session->userId(), "like_post", "post", postId);
+        LOG_INFO(QString("User %1 liked post %2").arg(userId).arg(postId));
+    }
+
+    // Get updated like count and isLiked status
     auto results = DbManager::instance().executeQuery(
         "SELECT like_count FROM forum_posts WHERE id = :id", {{"id", postId}});
-    int likeCount = results.isEmpty() ? 0 : results[0]["like_count"].toInt();
+    likeCount = results.isEmpty() ? 0 : results[0]["like_count"].toInt();
+
+    // Check if user currently likes this post (after toggle)
+    auto currentLikeResults = DbManager::instance().executeQuery(
+        "SELECT id FROM forum_likes WHERE user_id = :user_id AND post_id = :post_id",
+        {{"user_id", userId}, {"post_id", postId}});
 
     QJsonObject data;
     data["likeCount"] = likeCount;
+    data["isLiked"] = !currentLikeResults.isEmpty();  // Return current like status
 
     sendMessage(session, Message::success(
         Protocol::MessageType::LIKE_POST_RESPONSE, msg.seq(), data));
-
-    logAction(session->userId(), "like_post", "post", postId);
-    LOG_INFO(QString("User %1 liked post %2 (count=%3)")
-                 .arg(session->userId()).arg(postId).arg(likeCount));
 }
